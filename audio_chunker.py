@@ -5,6 +5,18 @@ import soundfile as sf
 from pathlib import Path
 import argparse
 
+"""
+!!! INPUT STRUCTURE !!!
+
+data/daic_woz/
+├── 300_P/
+│   └── diarisation_participant/
+│       ├── audio1.wav
+│       └── audio2.wav
+├── 301_P/
+│   └── diarisation_participant/
+│       └── ...
+"""
 
 def create_audio_chunks(audio_path, chunk_length, overlap, sample_rate=16000):
     """
@@ -105,8 +117,9 @@ def process_patient_folder(patient_path, output_base_path, chunk_length, overlap
 
 def main():
     # Configuration parameters
-    CHUNK_LENGTH = 3.0  # seconds
-    OVERLAP = 1.5       # seconds
+    # 16000 Hz corresponds to the sample rate of the original DAIC-WOZ audio files
+    CHUNK_LENGTH = 10.0  # seconds
+    OVERLAP = 5.0       # seconds
     SAMPLE_RATE = 16000 # Hz
     
     # Paths
@@ -143,6 +156,20 @@ def main():
     
     print("-" * 50)
     print("Processing complete!")
+
+"""
+!!! OUTPUT STRUCTURE !!!
+
+data/created_data/
+├── 300_P/
+│   └── 3.0s_1.5s_overlap/
+│       ├── audio1_chunk01.wav
+│       ├── audio1_chunk02.wav
+│       └── ...
+├── 301_P/
+│   └── 3.0s_1.5s_overlap/
+│       └── ...
+"""
 
 
 if __name__ == "__main__":
