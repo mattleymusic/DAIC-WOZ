@@ -21,12 +21,15 @@ from pathlib import Path
     !!! OUTPUT STRUCTURE !!!
     
     data/created_data/
-    ├── 300_P/
-    │   └── concatenated_diarisation/
-    │       └── 300_P_concatenated_diarisation.wav
-    ├── 301_P/
-    │   └── concatenated_diarisation/
-    │       └── 301_P_concatenated_diarisation.wav
+    ├── concatenated_diarisation/
+    │   ├── 300_P/
+    │   │   └── 300_P_concatenated.wav
+    │   ├── 301_P/
+    │   │   └── 301_P_concatenated.wav
+    │   └── ...
+    ├── [other_data_types]/
+    │   └── [patient_folders]/
+    │       └── [files]
     └── ...
     
     !!! PROCESSING DETAILS !!!
@@ -37,6 +40,7 @@ from pathlib import Path
     - Maintains original 16kHz sample rate and audio quality
     - Output files contain everything the participant said in chronological order
     - No padding or gaps between audio segments
+    - NEW: Organized by data type first, then by patient for easier management
 """
 
 def concatenate_diarised_audio(patient_path, output_base_path, sample_rate=16000):
@@ -60,8 +64,8 @@ def concatenate_diarised_audio(patient_path, output_base_path, sample_rate=16000
         print(f"Warning: diarisation_participant folder not found in {patient_path}")
         return False
     
-    # Create output directory
-    output_path = os.path.join(output_base_path, patient_name, "concatenated_diarisation")
+    # Create output directory - NEW STRUCTURE: data_type/patient_id/
+    output_path = os.path.join(output_base_path, "concatenated_diarisation", patient_name)
     os.makedirs(output_path, exist_ok=True)
     
     # Get all audio files and sort them by part number
@@ -106,8 +110,8 @@ def concatenate_diarised_audio(patient_path, output_base_path, sample_rate=16000
         print(f"  Concatenating {len(concatenated_audio)} audio segments...")
         final_audio = np.concatenate(concatenated_audio)
         
-        # Save concatenated audio
-        output_filename = f"{patient_name}_concatenated_diarisation.wav"
+        # Save concatenated audio - NEW NAMING: patient_id_concatenated.wav
+        output_filename = f"{patient_name}_concatenated.wav"
         output_filepath = os.path.join(output_path, output_filename)
         
         sf.write(output_filepath, final_audio, sample_rate)
@@ -195,8 +199,10 @@ def main():
     print(f"Failed: {failed}")
     print(f"Success rate: {(successful/len(patient_folders)*100):.1f}%")
     print("\nConcatenated audio files saved to:")
-    print(f"  {OUTPUT_DIR}/[PATIENT_ID]/concatenated_diarisation/")
+    print(f"  {OUTPUT_DIR}/concatenated_diarisation/[PATIENT_ID]/[PATIENT_ID]_concatenated.wav")
     print("\nNext step: Use these concatenated files for chunking with different lengths!")
+    print("\nNote: New structure allows easy deletion of all concatenated data by removing:")
+    print(f"  {OUTPUT_DIR}/concatenated_diarisation/")
 
 
 if __name__ == "__main__":
