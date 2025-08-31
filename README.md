@@ -9,7 +9,8 @@ The Goal of this project is to use audio data from the DAIC-WOZ data set to cons
 # Recreating results
 The repository consists of standalone python scripts that are meant to be executed one after another.
 In order to flawlessly recreate results, the structure of the input data as well as the order in which to execute the python scripts needs to be followed closely. 
-For obvious reasons, the interview data is NOT part of the repository. Only the data processing / machine learning code is.
+For obvious reasons, the interview data is NOT part of the repository. Only the data processing / machine learning code is. 
+Beware that following these results will take up a significant amount of storage on your machine due to the generation of audio chunks as well as features in a multitude of lengths (sum of ~100GB).
 
 ## Virtual environment
 Before running any code in this repository, make sure to create a virtual environment, activate it and install all requirements. 
@@ -48,4 +49,4 @@ Once the data is provided in the structure outlined above, run the following scr
 ```bash
 python src/preprocessing/audio_concatenator.py
 ```
-The results will be saved to `data/created_data/concatenated_diarisation/300_P/300_P_concatenated.wav` an so on. The `data/created_data` directory will be the target directory for all further created data.
+The results will be saved to `data/created_data/concatenated_diarisation/300_P/300_P_concatenated.wav` and so on. The `data/created_data` directory will be the target directory for all further created data.
