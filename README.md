@@ -42,7 +42,10 @@ data/
 │   ├── 301_P/
 │   │   └── diarisation_participant/
 │   │       └── ...
+│   ├── meta_info.csv
 ```
+
+where `meta_info.csv` contains the columns *participant, target, subset* and contains the ground truth labels corresponding to the patients.
 
 ## Audio concatenation
 Once the data is provided in the structure outlined above, run the following script to generate a long audio file per patient. Make sure the venv is activated.
