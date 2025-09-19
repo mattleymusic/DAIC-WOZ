@@ -178,7 +178,7 @@ def process_single_patient(patient_folder, output_dir, model, device, sample_rat
             feature_df = pd.DataFrame([features], columns=feature_names)
             
             # Save to CSV
-            output_filename = f"{chunk_name}_features.csv"
+            output_filename = f"{chunk_name}_hubert_features.csv"
             output_path = os.path.join(patient_output_dir, output_filename)
             feature_df.to_csv(output_path, index=False)
             

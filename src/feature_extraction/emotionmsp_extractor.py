@@ -172,7 +172,7 @@ def process_single_patient(patient_folder, output_dir, model, device, sample_rat
         chunk_name = os.path.splitext(chunk_filename)[0]  # Remove .wav extension
 
         # Check if output CSV already exists
-        output_filename = f"{chunk_name}_features.csv"
+        output_filename = f"{chunk_name}_emotionmsp_features.csv"
         output_path = os.path.join(patient_output_dir, output_filename)
 
         if os.path.exists(output_path):
