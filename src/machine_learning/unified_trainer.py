@@ -2,13 +2,13 @@
 """
 Unified Machine Learning Trainer - Simplified ML Pipeline
 
-This script provides a unified machine learning pipeline that can work with
-different feature types and models using a simplified, reusable approach.
+This script provides a unified machine learning pipeline that trains a single
+classifier with different feature types using a simplified, reusable approach.
 
 🎯 QUICK START:
 1. Edit the configuration parameters at the top of this file (lines 68-138)
 2. Choose your feature set: FEATURE_TYPE = "paper_fused_features"
-3. Choose your models: MODELS_TO_TRAIN = ['svm', 'rf']
+3. Choose your single model: MODELS_TO_TRAIN = ['svm']
 4. Run: python src/machine_learning/unified_trainer.py
 
 📋 AVAILABLE FEATURE SETS:
@@ -29,7 +29,7 @@ different feature types and models using a simplified, reusable approach.
 - "rf"     # Random Forest (400 trees, balanced subsample)
 
 Features:
-- Supports multiple feature types and models
+- Supports multiple feature types with a single model
 - Implements balanced sampling with oversampling option
 - Handles chunk-level to patient-level aggregation
 - Configurable parameters in __main__ section
@@ -72,7 +72,7 @@ sys.path.append(project_root)
 # 🎯 QUICK CONFIGURATION - Just change these 3 lines!
 FEATURE_TYPE = "paper_fused_features"  # ⭐ Try: "paper_fused_features", "egemaps", "hubert"
 CHUNK_LENGTH = "4.0s"                  # ⭐ Try: "3.0s", "5.0s", "10.0s", "20.0s", "30.0s"
-MODELS_TO_TRAIN = ['svm', 'rf']        # ⭐ Try: ['svm'], ['rf'], ['knn'], or combinations
+MODELS_TO_TRAIN = ['svm']              # ⭐ Single classifier: ['svm'], ['rf'], or ['knn']
 
 # =============================================================================
 # 📋 ALL AVAILABLE OPTIONS
@@ -85,6 +85,7 @@ MODELS_TO_TRAIN = ['svm', 'rf']        # ⭐ Try: ['svm'], ['rf'], ['knn'], or c
 #   - "emotionmsp"               # EmotionMSP features
 #   - "hubert"                   # HuBERT features
 #   - "hosf_fusion"              # HOSF Fusion features
+#   - "covarep"                  # COVAREP acoustic features (125 features)
 #   - "umap_egemaps"             # UMAP-transformed eGeMAPS
 #   - "umap_emotionmsp"          # UMAP-transformed EmotionMSP
 #   - "umap_hubert"              # UMAP-transformed HuBERT
@@ -101,6 +102,9 @@ DATA_ROOT = "data"
 # =============================================================================
 BALANCED_SAMPLING = True  # Apply balanced sampling (equal chunks per patient)
 OVERSAMPLE_MINORITY = True  # Oversample patients with fewer chunks (vs undersample all)
+USE_SIMPLE_OVERSAMPLING = True  # Use old simple oversampling approach (equal samples per patient)
+# Note: USE_SIMPLE_OVERSAMPLING=True gives exactly equal samples per patient (old approach)
+#       USE_SIMPLE_OVERSAMPLING=False uses the newer flexible oversampling approach
 RANDOM_SEED = 42         # Random seed for reproducible sampling
 
 # =============================================================================
@@ -123,14 +127,14 @@ EVALUATE_TEST_SET = True  # Whether to evaluate on test set
 #    FEATURE_TYPE = "paper_fused_features"
 #    MODELS_TO_TRAIN = ['svm']
 #
-# 2. Compare Random Forest vs SVM on eGeMAPS features:
+# 2. Train Random Forest on eGeMAPS features:
 #    FEATURE_TYPE = "egemaps"
-#    MODELS_TO_TRAIN = ['rf', 'svm']
+#    MODELS_TO_TRAIN = ['rf']
 #
-# 3. Train all models on HuBERT features (5-second chunks):
+# 3. Train SVM on HuBERT features (5-second chunks):
 #    FEATURE_TYPE = "hubert"
 #    CHUNK_LENGTH = "5.0s"
-#    MODELS_TO_TRAIN = ['svm', 'knn', 'rf']
+#    MODELS_TO_TRAIN = ['svm']
 #
 # 4. Quick test with paper fused features:
 #    FEATURE_TYPE = "paper_fused_features"
@@ -138,7 +142,7 @@ EVALUATE_TEST_SET = True  # Whether to evaluate on test set
 # =============================================================================
 
 
-def load_unified_features_and_labels(feature_type="unified_paper_features", chunk_length="4.0s", overlap="0.0s", data_root="data", balanced_sampling=True, random_seed=42, oversample_minority=True):
+def load_unified_features_and_labels(feature_type="unified_paper_features", chunk_length="4.0s", overlap="0.0s", data_root="data", balanced_sampling=True, random_seed=42, oversample_minority=True, use_simple_oversampling=False):
     """
     Load unified features and labels for machine learning.
     
@@ -150,6 +154,7 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
         balanced_sampling (bool): Whether to apply balanced sampling (equal chunks per patient)
         random_seed (int): Random seed for reproducible sampling
         oversample_minority (bool): Whether to oversample patients with fewer chunks
+        use_simple_oversampling (bool): Use old simple oversampling approach (equal samples per patient)
     
     Returns:
         dict: Dictionary containing train, dev, and test data
@@ -210,8 +215,13 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
             continue
         
         # Get all feature files for this participant
-        # All feature files now follow the pattern: chunk_[XXX]_[FEATURE_TYPE]_features.csv
-        feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}_features.csv"))
+        # Handle different naming patterns for different feature types
+        if feature_type == "paper_fused_features":
+            # Paper fused features use pattern: chunk_[XXX]_paper_fused_features.csv
+            feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}.csv"))
+        else:
+            # Other feature types follow pattern: chunk_[XXX]_[FEATURE_TYPE]_features.csv
+            feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}_features.csv"))
         
         feature_files.sort()  # Ensure consistent ordering
         
@@ -260,7 +270,35 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
             print(f"{subset.capitalize()} set - Chunks per participant:")
             print(f"  Min: {min_chunks}, Max: {max_chunks}, Mean: {participant_counts.mean():.1f}")
             
-            if oversample_minority:
+            if use_simple_oversampling:
+                # Old simple oversampling approach: equal samples per patient
+                print(f"  Using simple oversampling: all patients will have {max_chunks} chunks")
+                
+                balanced_samples = []
+                for participant in subset_df['participants'].unique():
+                    participant_data = subset_df[subset_df['participants'] == participant]
+                    num_chunks = len(participant_data)
+                    
+                    if num_chunks == max_chunks:
+                        # Use all chunks from patients with the maximum number
+                        balanced_samples.append(participant_data)
+                    else:
+                        # Oversample patients with fewer chunks to match max_chunks
+                        # Calculate how many times to repeat the data
+                        repeat_times = max_chunks // num_chunks
+                        remainder = max_chunks % num_chunks
+                        
+                        # Repeat the entire dataset
+                        repeated_data = pd.concat([participant_data] * repeat_times, ignore_index=True)
+                        
+                        # Add remaining samples randomly if needed
+                        if remainder > 0:
+                            additional_samples = participant_data.sample(n=remainder, random_state=random_seed)
+                            repeated_data = pd.concat([repeated_data, additional_samples], ignore_index=True)
+                        
+                        balanced_samples.append(repeated_data)
+                        
+            elif oversample_minority:
                 # Strategy: Use all chunks from patients with many chunks, oversample patients with few chunks
                 print(f"  Using oversampling strategy: patients with <{max_chunks} chunks will be oversampled")
                 
@@ -659,7 +697,7 @@ def validate_configuration(feature_type, chunk_length, overlap, models_to_train,
     # Valid feature types
     valid_feature_types = [
         "paper_fused_features", "unified_paper_features", "egemaps", 
-        "emotionmsp", "hubert", "hosf_fusion", "umap_egemaps", 
+        "emotionmsp", "hubert", "hosf_fusion", "covarep", "umap_egemaps", 
         "umap_emotionmsp", "umap_hubert", "umap_hosf_fusion"
     ]
     
@@ -723,7 +761,7 @@ def main():
         print("Loading features and labels...")
         data = load_unified_features_and_labels(
             FEATURE_TYPE, CHUNK_LENGTH, OVERLAP, DATA_ROOT, 
-            BALANCED_SAMPLING, RANDOM_SEED, OVERSAMPLE_MINORITY
+            BALANCED_SAMPLING, RANDOM_SEED, OVERSAMPLE_MINORITY, USE_SIMPLE_OVERSAMPLING
         )
         
         # Extract data for each split
@@ -752,38 +790,39 @@ def main():
             print("Error: No development data available")
             return
         
-        # Train and evaluate models
+        # Train and evaluate single model
         trained_models = {}
         
-        for model_type in MODELS_TO_TRAIN:
-            print("\n" + "="*60)
-            print(f"TRAINING {model_type.upper()} MODEL")
-            print("="*60)
-            
-            model, scaler, dev_predictions = train_model(
-                model_type, train_features, train_labels, dev_features, dev_labels, RANDOM_SEED
-            )
-            
-            dev_results = evaluate_model(dev_labels, dev_predictions, model_type.upper(), "dev", dev_participants)
-            
-            # Evaluate on test set if available
-            test_results = None
-            if EVALUATE_TEST_SET and len(test_features) > 0:
-                print(f"\nEvaluating {model_type.upper()} on test set...")
-                test_features_scaled = scaler.transform(test_features)
-                test_predictions = model.predict(test_features_scaled)
-                test_results = evaluate_model(test_labels, test_predictions, model_type.upper(), "test", test_participants)
-            
-            # Save combined dev + test results in a single file
-            save_combined_results(model, scaler, dev_results, test_results, model_type.upper(), FEATURE_TYPE, CHUNK_LENGTH, OVERLAP)
-            
-            trained_models[model_type] = {'model': model, 'scaler': scaler}
+        # Train the single model specified in MODELS_TO_TRAIN
+        model_type = MODELS_TO_TRAIN[0]
+        print("\n" + "="*60)
+        print(f"TRAINING {model_type.upper()} MODEL")
+        print("="*60)
+        
+        model, scaler, dev_predictions = train_model(
+            model_type, train_features, train_labels, dev_features, dev_labels, RANDOM_SEED
+        )
+        
+        dev_results = evaluate_model(dev_labels, dev_predictions, model_type.upper(), "dev", dev_participants)
+        
+        # Evaluate on test set if available
+        test_results = None
+        if EVALUATE_TEST_SET and len(test_features) > 0:
+            print(f"\nEvaluating {model_type.upper()} on test set...")
+            test_features_scaled = scaler.transform(test_features)
+            test_predictions = model.predict(test_features_scaled)
+            test_results = evaluate_model(test_labels, test_predictions, model_type.upper(), "test", test_participants)
+        
+        # Save combined dev + test results in a single file
+        save_combined_results(model, scaler, dev_results, test_results, model_type.upper(), FEATURE_TYPE, CHUNK_LENGTH, OVERLAP)
+        
+        trained_models[model_type] = {'model': model, 'scaler': scaler}
         
         print("\n" + "="*60)
         print("UNIFIED TRAINING COMPLETED")
         print("="*60)
         print(f"Results saved to data/results/{FEATURE_TYPE}/")
-        print(f"Trained models: {list(trained_models.keys())}")
+        print(f"Trained model: {model_type.upper()}")
         
     except Exception as e:
         print(f"Error during unified training: {str(e)}")
@@ -795,7 +834,7 @@ if __name__ == "__main__":
     🎯 QUICK START:
     1. Edit the configuration parameters at the top of this file (lines 68-138)
     2. Choose your feature set: FEATURE_TYPE = "paper_fused_features"
-    3. Choose your models: MODELS_TO_TRAIN = ['svm', 'rf']
+    3. Choose your single model: MODELS_TO_TRAIN = ['svm']
     4. Run: python src/machine_learning/unified_trainer.py
     """
     main()
