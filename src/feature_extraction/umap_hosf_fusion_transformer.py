@@ -428,10 +428,10 @@ def process_chunk_length(chunk_length, data_root="data"):
             chunk_length, overlap, data_root + "/features"
         )
 
-        print(f"✅ Completed HOSF fusion {chunk_length}")
+        print(f"Completed HOSF fusion {chunk_length}")
 
     except Exception as e:
-        print(f"❌ Error processing HOSF fusion {chunk_length}: {str(e)}")
+        print(f"Error processing HOSF fusion {chunk_length}: {str(e)}")
         print("Continuing with next chunk length...")
         # Don't raise the exception, just continue with the next chunk length
 
@@ -440,10 +440,10 @@ def main():
     Main function to generate UMAP features for HOSF fusion features.
     """
     if not UMAP_AVAILABLE:
-        print("❌ UMAP is not available. Please install with: pip install umap-learn")
+        print("UMAP is not available. Please install with: pip install umap-learn")
         return
 
-    print("🎯 UMAP Feature Transformer for HOSF Fusion Features")
+    print("UMAP Feature Transformer for HOSF Fusion Features")
     print("=" * 60)
 
     # Get available chunk lengths
@@ -451,11 +451,11 @@ def main():
         chunk_lengths = get_available_chunk_lengths()
         print(f"Found {len(chunk_lengths)} available chunk lengths: {chunk_lengths}")
     except Exception as e:
-        print(f"❌ Error getting chunk lengths: {str(e)}")
+        print(f"Error getting chunk lengths: {str(e)}")
         return
 
     # UMAP configuration
-    print("\n🔧 UMAP Configuration:")
+    print("\nUMAP Configuration:")
     print("  - Metric: cosine (optimal for embeddings)")
     print("  - n_components: adaptive (50 or half of input dimensions)")
     print("  - n_neighbors: adaptive (15 or half of sample count)")
@@ -470,12 +470,12 @@ def main():
         try:
             process_chunk_length(chunk_length)
         except Exception as e:
-            print(f"❌ Error processing {chunk_length}: {str(e)}")
+            print(f"Error processing {chunk_length}: {str(e)}")
             continue
 
     total_time = time.time() - start_time
     print(f"\n{'='*60}")
-    print("🎉 UMAP Feature Transformation Completed!")
+    print("UMAP Feature Transformation Completed!")
     print(f"Total time: {total_time:.2f} seconds")
     print(f"UMAP-transformed HOSF fusion features saved to:")
     print(f"   - data/features/umap_hosf_fusion/")

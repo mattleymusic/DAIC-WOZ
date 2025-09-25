@@ -54,7 +54,13 @@ def load_emotionmsp_model(force_cpu=False):
             device = torch.device("cpu")
             print("Forcing CPU usage as requested")
         else:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            # Check for CUDA first, then MPS (Apple Silicon), then CPU
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+            elif torch.backends.mps.is_available():
+                device = torch.device("mps")
+            else:
+                device = torch.device("cpu")
         
         model = model.to(device)
         
@@ -101,14 +107,10 @@ def extract_emotionmsp_features(audio_path, model, device, sample_rate=16000):
         with torch.no_grad():
             # Get the hidden states from the last layer
             outputs = model(waveform, output_hidden_states=True)
-            
             # Extract the final hidden layer (last layer)
-            # Shape: (batch_size, sequence_length, hidden_size)
             hidden_states = outputs.hidden_states[-1]
-            
-            # Take the mean across the time dimension to get a single feature vector
-            # Shape: (batch_size, hidden_size)
-            feature_vector = torch.mean(hidden_states, dim=1)
+            # Extract hidden state of the final token for classification
+            feature_vector = hidden_states[:, -1, :]
             
             # Convert to numpy and flatten
             feature_vector = feature_vector.cpu().numpy().flatten()
@@ -258,25 +260,25 @@ def process_chunk_configuration(chunk_config_dir, output_base_dir, model, device
             
             if result['status'] == 'completed':
                 if result['failed_chunks'] == 0 and result['skipped_chunks'] == 0:
-                    print(f"  ✓ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
+                    print(f"  {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
                     successful_patients += 1
                 elif result['failed_chunks'] == 0:
-                    print(f"  ✓ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['skipped_chunks']} skipped)")
+                    print(f"  {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['skipped_chunks']} skipped)")
                     successful_patients += 1
                 else:
-                    print(f"  ⚠ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed, {result['skipped_chunks']} skipped)")
+                    print(f"  Warning {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed, {result['skipped_chunks']} skipped)")
                     successful_patients += 1  # Still count as successful if some chunks worked
                 
                 total_chunks += result['total_chunks']
             elif result['status'] == 'no_chunks_found':
-                print(f"  ⚠ {patient_name}: No audio chunks found")
+                print(f"  Warning {patient_name}: No audio chunks found")
                 failed_patients += 1
             else:
-                print(f"  ✗ {patient_name}: Processing failed")
+                print(f"  Error {patient_name}: Processing failed")
                 failed_patients += 1
                 
         except Exception as e:
-            print(f"  ✗ {patient_name}: Error in processing: {e}")
+            print(f"  Error {patient_name}: Error in processing: {e}")
             failed_patients += 1
     
     end_time = time.time()
@@ -431,7 +433,7 @@ def main():
         
         # Check if configuration directory exists
         if not os.path.exists(config_input_dir):
-            print(f"\n⚠ Configuration directory not found: {config_input_dir}")
+            print(f"\nWarning: Configuration directory not found: {config_input_dir}")
             print("Skipping this configuration...")
             continue
         

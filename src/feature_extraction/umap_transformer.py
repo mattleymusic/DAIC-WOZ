@@ -38,6 +38,10 @@ except ImportError:
 
 warnings.filterwarnings("ignore")
 
+# Global configuration parameters
+FEATURE_TYPES = ['egemaps', 'emotionmsp', 'hubert']
+N_COMPONENTS = 26  # Number of UMAP components
+
 def get_available_chunk_lengths(data_root="data"):
     """
     Get all available chunk length configurations from the created_data directory.
@@ -134,7 +138,15 @@ def load_features_for_umap(feature_type, chunk_length, overlap, data_root="data"
     with tqdm(total=len(available_participants), desc="Loading features", unit="participant") as pbar:
         for participant in available_participants:
             participant_dir = os.path.join(feature_dir, participant)
-            feature_files = glob.glob(os.path.join(participant_dir, "*_features.csv"))
+            # Use feature-specific file patterns
+            if feature_type == 'egemaps':
+                feature_files = glob.glob(os.path.join(participant_dir, "*_egemap_features.csv"))
+            elif feature_type == 'emotionmsp':
+                feature_files = glob.glob(os.path.join(participant_dir, "*_emotionmsp_features.csv"))
+            elif feature_type == 'hubert':
+                feature_files = glob.glob(os.path.join(participant_dir, "*_hubert_features.csv"))
+            else:
+                feature_files = glob.glob(os.path.join(participant_dir, "*_features.csv"))
 
             if not feature_files:
                 pbar.update(1)
@@ -213,8 +225,11 @@ def save_umap_features(umap_features, file_paths, participant_ids, labels,
         overlap (str): Overlap length
         output_dir (str): Output directory
     """
-    # Create output directory
-    output_base = f"{output_dir}/umap_{feature_type}"
+    # Get number of UMAP dimensions
+    n_dimensions = umap_features.shape[1]
+    
+    # Create output directory with dimensionality info
+    output_base = f"{output_dir}/umap_{feature_type}_{n_dimensions}D"
     output_subdir = f"{output_base}/{chunk_length}_{overlap}_overlap"
     os.makedirs(output_subdir, exist_ok=True)
 
@@ -291,7 +306,7 @@ def process_feature_type(feature_type, chunk_lengths, data_root="data"):
 
             # Apply UMAP transformation
             print("Applying UMAP transformation...")
-            n_components = min(50, features.shape[1] // 2)  # Adaptive component count
+            n_components = min(N_COMPONENTS, features.shape[1] // 2)  # Adaptive component count
             umap_features = apply_umap_transformation(
                 features,
                 n_components=n_components,
@@ -307,10 +322,10 @@ def process_feature_type(feature_type, chunk_lengths, data_root="data"):
                 feature_type, chunk_length, overlap, data_root + "/features"
             )
 
-            print(f"✅ Completed {feature_type} {chunk_length}")
+            print(f"Completed {feature_type} {chunk_length}")
 
         except Exception as e:
-            print(f"❌ Error processing {feature_type} {chunk_length}: {str(e)}")
+            print(f"Error processing {feature_type} {chunk_length}: {str(e)}")
             continue
 
 def main():
@@ -318,10 +333,10 @@ def main():
     Main function to generate UMAP features for all feature types and chunk lengths.
     """
     if not UMAP_AVAILABLE:
-        print("❌ UMAP is not available. Please install with: pip install umap-learn")
+        print("UMAP is not available. Please install with: pip install umap-learn")
         return
 
-    print("🎯 UMAP Feature Transformer for DAIC-WOZ Dataset")
+    print("UMAP Feature Transformer for DAIC-WOZ Dataset")
     print("=" * 60)
 
     # Get available chunk lengths
@@ -329,34 +344,34 @@ def main():
         chunk_lengths = get_available_chunk_lengths()
         print(f"Found {len(chunk_lengths)} available chunk lengths: {chunk_lengths}")
     except Exception as e:
-        print(f"❌ Error getting chunk lengths: {str(e)}")
+        print(f"Error getting chunk lengths: {str(e)}")
         return
 
     # UMAP configuration
-    print("\n🔧 UMAP Configuration:")
+    print("\nUMAP Configuration:")
+    print(f"  - Feature types: {FEATURE_TYPES}")
+    print(f"  - Max n_components: {N_COMPONENTS}")
     print("  - Metric: cosine (optimal for embeddings)")
-    print("  - n_components: adaptive (50 or half of input dimensions)")
+    print("  - n_components: adaptive (max_components or half of input dimensions)")
     print("  - n_neighbors: adaptive (15 or half of sample count)")
     print("  - min_dist: 0.1")
     print("  - random_state: 42")
 
     # Process each feature type
-    feature_types = ['egemaps', 'emotionmsp', 'hubert']
-
     start_time = time.time()
 
-    for feature_type in feature_types:
+    for feature_type in FEATURE_TYPES:
         try:
             process_feature_type(feature_type, chunk_lengths)
         except Exception as e:
-            print(f"❌ Error processing {feature_type}: {str(e)}")
+            print(f"Error processing {feature_type}: {str(e)}")
             continue
 
     total_time = time.time() - start_time
     print(f"Total time: {total_time:.2f} seconds")
-    print("🎉 UMAP Feature Transformation Completed!")
-    for feature_type in feature_types:
-        print(f"   - data/features/umap_{feature_type}/")
+    print("UMAP Feature Transformation Completed!")
+    for feature_type in FEATURE_TYPES:
+        print(f"   - data/features/umap_{feature_type}_*D/")
 
 if __name__ == "__main__":
     

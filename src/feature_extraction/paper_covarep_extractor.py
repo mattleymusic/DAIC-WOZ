@@ -446,7 +446,7 @@ def process_chunk_configuration(chunk_config_dir, output_base_dir, sample_rate=1
     
     # Determine number of workers (optimized for MBP 10P+4E cores)
     # Use fewer cores for memory efficiency
-    num_workers = min(2, len(patient_folders), 4)  # Conservative: use only 2-4 cores to save memory
+    num_workers = 6  # Conservative: use only 2-4 cores to save memory
     print(f"Using {num_workers} parallel workers (conservative for memory)")
     print(f"Available cores: {mp.cpu_count()} total, {PERFORMANCE_CORES} performance, {EFFICIENCY_CORES} efficiency")
     
@@ -474,22 +474,22 @@ def process_chunk_configuration(chunk_config_dir, output_base_dir, sample_rate=1
                 
                 if result['status'] == 'completed':
                     if result['failed_chunks'] == 0:
-                        print(f"✓ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
+                        print(f"{patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
                         successful_patients += 1
                     else:
-                        print(f"⚠ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed)")
+                        print(f"Warning {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed)")
                         successful_patients += 1  # Still count as successful if some chunks worked
                     
                     total_chunks += result['total_chunks']
                 elif result['status'] == 'no_chunks_found':
-                    print(f"⚠ {patient_name}: No audio chunks found")
+                    print(f"Warning {patient_name}: No audio chunks found")
                     failed_patients += 1
                 else:
-                    print(f"✗ {patient_name}: Processing failed")
+                    print(f"Error {patient_name}: Processing failed")
                     failed_patients += 1
                     
             except Exception as e:
-                print(f"✗ {patient_name}: Error in parallel processing: {e}")
+                print(f"Error {patient_name}: Error in parallel processing: {e}")
                 failed_patients += 1
     
     end_time = time.time()
@@ -537,8 +537,15 @@ def main():
     optimize_memory()
     set_cpu_affinity()
     
-    # Configuration parameters - Processing 4-second chunks as in paper
-    CHUNK_CONFIG = "4.0s_0.0s_overlap"  # Exactly as created by paper_audio_chunker.py
+    # Configuration parameters - Processing multiple chunk configurations
+    CHUNK_CONFIGS = [
+        "3.0s_1.5s_overlap",   # 3-second chunks with 1.5s overlap
+        "4.0s_0.0s_overlap",   # 4-second chunks with no overlap (paper's approach)
+        "5.0s_2.5s_overlap",   # 5-second chunks with 2.5s overlap
+        "10.0s_5.0s_overlap",  # 10-second chunks with 5s overlap
+        "20.0s_10.0s_overlap", # 20-second chunks with 10s overlap
+        "30.0s_15.0s_overlap"  # 30-second chunks with 15s overlap
+    ]
     SAMPLE_RATE = 16000  # Hz - maintains original DAIC-WOZ format
     
     # Paths - adjusted for src/feature_extraction directory
@@ -551,35 +558,46 @@ def main():
     print(f"Input directory: {INPUT_BASE_DIR}")
     print(f"Output directory: {OUTPUT_BASE_DIR}")
     print(f"Sample rate: {SAMPLE_RATE} Hz")
-    print(f"Chunk configuration to process: {CHUNK_CONFIG}")
+    print(f"Chunk configurations to process: {CHUNK_CONFIGS}")
     print("=" * 80)
     
-    # Check if 4-second chunks exist
-    config_input_dir = os.path.join(INPUT_BASE_DIR, CHUNK_CONFIG)
-    if not os.path.exists(config_input_dir):
-        print(f"❌ Error: 4-second chunks not found: {config_input_dir}")
-        print("Please run paper_audio_chunker.py first to create 4-second chunks.")
-        return
+    total_successful_patients = 0
+    total_failed_patients = 0
+    total_chunks_processed = 0
     
-    print(f"\n{'='*20} Processing {CHUNK_CONFIG} {'='*20}")
-    
-    # Process this configuration
-    successful, failed, chunks = process_chunk_configuration(
-        config_input_dir, 
-        OUTPUT_BASE_DIR, 
-        SAMPLE_RATE
-    )
+    # Process each chunk configuration
+    for config_name in CHUNK_CONFIGS:
+        config_input_dir = os.path.join(INPUT_BASE_DIR, config_name)
+        
+        # Check if configuration directory exists
+        if not os.path.exists(config_input_dir):
+            print(f"\nWarning: Configuration directory not found: {config_input_dir}")
+            print("Skipping this configuration...")
+            continue
+        
+        print(f"\n{'='*20} Processing {config_name} {'='*20}")
+        
+        # Process this configuration
+        successful, failed, chunks = process_chunk_configuration(
+            config_input_dir, 
+            OUTPUT_BASE_DIR, 
+            SAMPLE_RATE
+        )
+        
+        total_successful_patients += successful
+        total_failed_patients += failed
+        total_chunks_processed += chunks
     
     print("\n" + "=" * 80)
     print("FINAL PROCESSING SUMMARY")
     print("=" * 80)
-    print(f"Total patients processed: {successful + failed}")
-    print(f"Successful patients: {successful}")
-    print(f"Failed patients: {failed}")
-    print(f"Total chunks processed: {chunks}")
-    print(f"Success rate: {(successful/(successful+failed)*100):.1f}%")
+    print(f"Total patients processed: {total_successful_patients + total_failed_patients}")
+    print(f"Successful patients: {total_successful_patients}")
+    print(f"Failed patients: {total_failed_patients}")
+    print(f"Total chunks processed: {total_chunks_processed}")
+    print(f"Success rate: {(total_successful_patients/(total_successful_patients+total_failed_patients)*100):.1f}%")
     print(f"\nPaper COVAREP features saved to:")
-    print(f"  {OUTPUT_BASE_DIR}/features/paper_covarep/{CHUNK_CONFIG}/[PATIENT_ID]/[CHUNK]_paper_covarep_features.csv")
+    print(f"  {OUTPUT_BASE_DIR}/features/paper_covarep/[CONFIG]/[PATIENT_ID]/[CHUNK]_paper_covarep_features.csv")
     print(f"\nEach CSV contains exactly 74 COVAREP features as specified in Miao et al. 2022.")
     print(f"These features will be reduced to 10 features using Relief-based selection in the next step.")
 

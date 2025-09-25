@@ -341,79 +341,93 @@ def main():
     print("=" * 60)
     
     # Configuration parameters - CHANGE THESE VALUES AS NEEDED
-    CHUNK_LENGTH = "4.0s"  # Paper uses 4-second chunks
-    OVERLAP = "0.0s"        # Paper uses no overlap
+    CHUNK_CONFIGS = [
+        ("3.0s", "1.5s"),   # 3-second chunks with 1.5s overlap
+        ("5.0s", "2.5s"),    # 5-second chunks with 2.5s overlap
+        ("10.0s", "5.0s"),   # 10-second chunks with 5s overlap
+        ("20.0s", "10.0s"),  # 20-second chunks with 10s overlap
+        ("30.0s", "15.0s")   # 30-second chunks with 15s overlap
+    ]
     DATA_ROOT = "data"      # Root directory for data
     
-    print(f"Chunk length: {CHUNK_LENGTH}")
-    print(f"Overlap: {OVERLAP}")
+    print(f"Chunk configurations: {CHUNK_CONFIGS}")
     print(f"Data root: {DATA_ROOT}")
     print("=" * 60)
     
     start_time = time.time()
     
-    try:
-        # Load Relief selection information
-        print("Loading Relief feature selection information...")
-        selected_indices = load_relief_selection_info(CHUNK_LENGTH, OVERLAP, DATA_ROOT)
+    # Load meta information once (same for all configurations)
+    print("Loading meta information...")
+    meta_df, participant_to_target, participant_to_subset = load_meta_info(DATA_ROOT)
+    
+    # Create feature names (same for all configurations)
+    feature_names = create_fused_feature_names()
+    print(f"Created {len(feature_names)} feature names")
+    
+    total_configurations_processed = 0
+    total_configurations_failed = 0
+    
+    # Process each chunk configuration
+    for chunk_length, overlap in CHUNK_CONFIGS:
+        print(f"\n{'='*20} Processing {chunk_length}_{overlap}_overlap {'='*20}")
         
-        # Load meta information
-        print("Loading meta information...")
-        meta_df, participant_to_target, participant_to_subset = load_meta_info(DATA_ROOT)
-        
-        # Create feature names
-        feature_names = create_fused_feature_names()
-        print(f"Created {len(feature_names)} feature names")
-        
-        # Extract fused features for all participants
-        print("Extracting fused features for all participants...")
-        all_fused_features = []
-        
-        for i, participant in enumerate(meta_df['participant']):
-            print(f"Processing participant {i+1}/{len(meta_df)}: {participant}")
+        try:
+            # Load Relief selection information for this configuration
+            print(f"Loading Relief feature selection information for {chunk_length}_{overlap}_overlap...")
+            selected_indices = load_relief_selection_info(chunk_length, overlap, DATA_ROOT)
             
-            participant_features = extract_fused_features_for_participant(
-                participant, participant_to_target, participant_to_subset,
-                CHUNK_LENGTH, OVERLAP, DATA_ROOT, selected_indices
+            # Extract fused features for all participants
+            print(f"Extracting fused features for all participants...")
+            all_fused_features = []
+            
+            for i, participant in enumerate(meta_df['participant']):
+                print(f"Processing participant {i+1}/{len(meta_df)}: {participant}")
+                
+                participant_features = extract_fused_features_for_participant(
+                    participant, participant_to_target, participant_to_subset,
+                    chunk_length, overlap, DATA_ROOT, selected_indices
+                )
+                
+                all_fused_features.extend(participant_features)
+                
+                if len(participant_features) > 0:
+                    print(f"  Extracted {len(participant_features)} fused feature chunks")
+                else:
+                    print(f"  No features extracted")
+            
+            print(f"\nTotal fused feature chunks extracted: {len(all_fused_features)}")
+            
+            # Save fused features
+            print("Saving fused features...")
+            fused_features_dir = save_fused_features(
+                all_fused_features, feature_names, chunk_length, overlap, DATA_ROOT
             )
             
-            all_fused_features.extend(participant_features)
+            total_configurations_processed += 1
+            print(f"Successfully processed {chunk_length}_{overlap}_overlap")
             
-            if len(participant_features) > 0:
-                print(f"  Extracted {len(participant_features)} fused feature chunks")
-            else:
-                print(f"  No features extracted")
-        
-        print(f"\nTotal fused feature chunks extracted: {len(all_fused_features)}")
-        
-        # Save fused features
-        print("Saving fused features...")
-        fused_features_dir = save_fused_features(
-            all_fused_features, feature_names, CHUNK_LENGTH, OVERLAP, DATA_ROOT
-        )
-        
-        # Calculate processing time
-        total_time = time.time() - start_time
-        
-        print("\n" + "=" * 60)
-        print("FUSED FEATURES CREATION COMPLETED")
-        print("=" * 60)
-        print(f"Total processing time: {total_time:.2f} seconds")
-        print(f"Fused features saved to: {fused_features_dir}")
-        print(f"\nFeature composition:")
-        print(f"  - 10 COVAREP features (selected by Relief)")
-        print(f"  - 16 HOSF features (9 BSF + 7 BCF)")
-        print(f"  - Total: 26 fused features per chunk")
-        print(f"\nStructure follows exact pattern of other feature sets:")
-        print(f"  data/features/paper_fused_features/4.0s_0.0s_overlap/[PATIENT_ID]/[CHUNK]_paper_fused_features_features.csv")
-        print(f"\nThis makes it easy to swap out other features for the fused version")
-        print(f"in your machine learning pipelines!")
-        
-    except Exception as e:
-        print(f"Error during fused features creation: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise
+        except Exception as e:
+            print(f"Error processing {chunk_length}_{overlap}_overlap: {str(e)}")
+            total_configurations_failed += 1
+            continue
+    
+    # Calculate processing time
+    total_time = time.time() - start_time
+    
+    print("\n" + "=" * 60)
+    print("FUSED FEATURES CREATION COMPLETED")
+    print("=" * 60)
+    print(f"Total processing time: {total_time:.2f} seconds")
+    print(f"Configurations processed successfully: {total_configurations_processed}")
+    print(f"Configurations failed: {total_configurations_failed}")
+    print(f"\nFeature composition:")
+    print(f"  - 10 COVAREP features (selected by Relief)")
+    print(f"  - 16 HOSF features (9 BSF + 7 BCF)")
+    print(f"  - Total: 26 fused features per chunk")
+    print(f"\nStructure follows exact pattern of other feature sets:")
+    print(f"  data/features/paper_fused_features/[CONFIG]/[PATIENT_ID]/[CHUNK]_paper_fused_features_features.csv")
+    print(f"\nThis makes it easy to swap out other features for the fused version")
+    print(f"in your machine learning pipelines!")
 
 
 if __name__ == "__main__":

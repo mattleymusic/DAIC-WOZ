@@ -281,23 +281,23 @@ def process_chunk_configuration(input_dir, output_base_dir, chunk_length=4.0, sa
                 
                 if result['status'] == 'completed':
                     if result['failed_files'] == 0:
-                        print(f"✓ {patient_name}: {result['successful_files']}/{result['total_files']} files processed, {result['total_chunks']} chunks created")
+                        print(f"{patient_name}: {result['successful_files']}/{result['total_files']} files processed, {result['total_chunks']} chunks created")
                         successful_patients += 1
                     else:
-                        print(f"⚠ {patient_name}: {result['successful_files']}/{result['total_files']} files processed ({result['failed_files']} failed), {result['total_chunks']} chunks created")
+                        print(f"Warning {patient_name}: {result['successful_files']}/{result['total_files']} files processed ({result['failed_files']} failed), {result['total_chunks']} chunks created")
                         successful_patients += 1  # Still count as successful if some files worked
                     
                     total_files += result['total_files']
                     total_chunks += result['total_chunks']
                 elif result['status'] == 'no_files_found':
-                    print(f"⚠ {patient_name}: No audio files found")
+                    print(f"Warning {patient_name}: No audio files found")
                     failed_patients += 1
                 else:
-                    print(f"✗ {patient_name}: Processing failed")
+                    print(f"Error {patient_name}: Processing failed")
                     failed_patients += 1
                     
             except Exception as e:
-                print(f"✗ {patient_name}: Error in parallel processing: {e}")
+                print(f"Error {patient_name}: Error in parallel processing: {e}")
                 failed_patients += 1
     
     end_time = time.time()

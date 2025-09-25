@@ -572,22 +572,22 @@ def process_chunk_configuration(chunk_config_dir, output_base_dir, sample_rate=1
                 
                 if result['status'] == 'completed':
                     if result['failed_chunks'] == 0:
-                        print(f"✓ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
+                        print(f"{patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
                         successful_patients += 1
                     else:
-                        print(f"⚠ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed)")
+                        print(f"Warning {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed)")
                         successful_patients += 1  # Still count as successful if some chunks worked
                     
                     total_chunks += result['total_chunks']
                 elif result['status'] == 'no_chunks_found':
-                    print(f"⚠ {patient_name}: No audio chunks found")
+                    print(f"Warning {patient_name}: No audio chunks found")
                     failed_patients += 1
                 else:
-                    print(f"✗ {patient_name}: Processing failed")
+                    print(f"Error {patient_name}: Processing failed")
                     failed_patients += 1
                     
             except Exception as e:
-                print(f"✗ {patient_name}: Error in parallel processing: {e}")
+                print(f"Error {patient_name}: Error in parallel processing: {e}")
                 failed_patients += 1
     
     end_time = time.time()
@@ -635,7 +635,11 @@ def main():
     
     # Configuration parameters - CHANGE THESE VALUES AS NEEDED
     CHUNK_CONFIGS = [
-        "4.0s_0.0s_overlap",  # Paper uses 4-second chunks with no overlap
+        "3.0s_1.5s_overlap",   # 3-second chunks with 1.5s overlap
+        "5.0s_2.5s_overlap",   # 5-second chunks with 2.5s overlap
+        "10.0s_5.0s_overlap",  # 10-second chunks with 5s overlap
+        "20.0s_10.0s_overlap", # 20-second chunks with 10s overlap
+        "30.0s_15.0s_overlap"  # 30-second chunks with 15s overlap
     ]
     SAMPLE_RATE = 16000  # Hz - maintains original DAIC-WOZ format
     FORCE_REGENERATE = True  # Set to True to regenerate all files (including existing ones)
@@ -672,7 +676,7 @@ def main():
         
         # Check if configuration directory exists
         if not os.path.exists(config_input_dir):
-            print(f"\n⚠ Configuration directory not found: {config_input_dir}")
+            print(f"\nWarning: Configuration directory not found: {config_input_dir}")
             print("Skipping this configuration...")
             continue
         
@@ -708,10 +712,10 @@ def main():
         print(f"Average time per chunk: {avg_time_per_chunk:.4f} seconds")
         print(f"Memory-efficient processing: Conservative approach for stability")
         print(f"Optimizations applied:")
-        print(f"  ✓ Chunked bispectrum computation")
-        print(f"  ✓ Memory-efficient processing")
-        print(f"  ✓ Conservative thread limits")
-        print(f"  ✓ Aggressive garbage collection")
+        print(f"  - Chunked bispectrum computation")
+        print(f"  - Memory-efficient processing")
+        print(f"  - Conservative thread limits")
+        print(f"  - Aggressive garbage collection")
     
     print(f"\nPaper HOSF features saved to:")
     print(f"  {OUTPUT_BASE_DIR}/features/paper_hosf/[CONFIG]/[PATIENT_ID]/[CHUNK]_paper_hosf_features.csv")

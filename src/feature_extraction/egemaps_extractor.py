@@ -220,22 +220,22 @@ def process_chunk_configuration(chunk_config_dir, output_base_dir, sample_rate=1
                 
                 if result['status'] == 'completed':
                     if result['failed_chunks'] == 0:
-                        print(f"✓ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
+                        print(f"{patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed successfully")
                         successful_patients += 1
                     else:
-                        print(f"⚠ {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed)")
+                        print(f"Warning {patient_name}: {result['successful_chunks']}/{result['total_chunks']} chunks processed ({result['failed_chunks']} failed)")
                         successful_patients += 1  # Still count as successful if some chunks worked
                     
                     total_chunks += result['total_chunks']
                 elif result['status'] == 'no_chunks_found':
-                    print(f"⚠ {patient_name}: No audio chunks found")
+                    print(f"Warning {patient_name}: No audio chunks found")
                     failed_patients += 1
                 else:
-                    print(f"✗ {patient_name}: Processing failed")
+                    print(f"Error {patient_name}: Processing failed")
                     failed_patients += 1
                     
             except Exception as e:
-                print(f"✗ {patient_name}: Error in parallel processing: {e}")
+                print(f"Error {patient_name}: Error in parallel processing: {e}")
                 failed_patients += 1
     
     end_time = time.time()
@@ -315,7 +315,7 @@ def main():
         
         # Check if configuration directory exists
         if not os.path.exists(config_input_dir):
-            print(f"\n⚠ Configuration directory not found: {config_input_dir}")
+            print(f"\nWarning: Configuration directory not found: {config_input_dir}")
             print("Skipping this configuration...")
             continue
         

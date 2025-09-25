@@ -5,13 +5,13 @@ Unified Machine Learning Trainer - Simplified ML Pipeline
 This script provides a unified machine learning pipeline that trains a single
 classifier with different feature types using a simplified, reusable approach.
 
-🎯 QUICK START:
+Quick start:
 1. Edit the configuration parameters at the top of this file (lines 68-138)
 2. Choose your feature set: FEATURE_TYPE = "paper_fused_features"
 3. Choose your single model: MODELS_TO_TRAIN = ['svm']
 4. Run: python src/machine_learning/unified_trainer.py
 
-📋 AVAILABLE FEATURE SETS:
+Available feature sets:
 - "paper_fused_features"     # Paper fused features (10 COVAREP + 16 HOSF) ⭐ NEW!
 - "unified_paper_features"   # Unified paper features
 - "egemaps"                  # eGeMAPS features
@@ -23,10 +23,13 @@ classifier with different feature types using a simplified, reusable approach.
 - "umap_hubert"              # UMAP-transformed HuBERT
 - "umap_hosf_fusion"         # UMAP-transformed HOSF Fusion
 
-🤖 AVAILABLE MODELS:
+Available models:
 - "svm"    # Support Vector Machine (RBF kernel, C=0.7)
 - "knn"    # K-Nearest Neighbors (k=2, distance weighting)
 - "rf"     # Random Forest (400 trees, balanced subsample)
+- "xgb"    # XGBoost (gradient boosting, optimized for class imbalance)
+- "lgb"    # LightGBM (gradient boosting, fast training)
+- "ensemble" # Voting ensemble of SVM + LightGBM (best performers)
 
 Features:
 - Supports multiple feature types with a single model
@@ -46,10 +49,13 @@ import pandas as pd
 import numpy as np
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, VotingClassifier
+import xgboost as xgb
+import lightgbm as lgb
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report, confusion_matrix
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import SMOTE
 import pickle
 import glob
 from pathlib import Path
@@ -66,83 +72,26 @@ project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 sys.path.append(project_root)
 
 # =============================================================================
-# 🎯 CONFIGURATION PARAMETERS - EDIT THESE TO CUSTOMIZE YOUR EXPERIMENT
+# CONFIGURATION PARAMETERS - EDIT THESE TO CUSTOMIZE YOUR EXPERIMENT
 # =============================================================================
 
-# 🎯 QUICK CONFIGURATION - Just change these 3 lines!
-FEATURE_TYPE = "paper_fused_features"  # ⭐ Try: "paper_fused_features", "egemaps", "hubert"
-CHUNK_LENGTH = "4.0s"                  # ⭐ Try: "3.0s", "5.0s", "10.0s", "20.0s", "30.0s"
-MODELS_TO_TRAIN = ['svm']              # ⭐ Single classifier: ['svm'], ['rf'], or ['knn']
-
-# =============================================================================
-# 📋 ALL AVAILABLE OPTIONS
-# =============================================================================
-# FEATURE SET SELECTION
-# Available options:
-#   - "paper_fused_features"     # Paper fused features (10 COVAREP + 16 HOSF) ⭐ NEW!
-#   - "unified_paper_features"   # Unified paper features
-#   - "egemaps"                  # eGeMAPS features
-#   - "emotionmsp"               # EmotionMSP features
-#   - "hubert"                   # HuBERT features
-#   - "hosf_fusion"              # HOSF Fusion features
-#   - "covarep"                  # COVAREP acoustic features (125 features)
-#   - "umap_egemaps"             # UMAP-transformed eGeMAPS
-#   - "umap_emotionmsp"          # UMAP-transformed EmotionMSP
-#   - "umap_hubert"              # UMAP-transformed HuBERT
-#   - "umap_hosf_fusion"         # UMAP-transformed HOSF Fusion
-
-# =============================================================================
-# ADVANCED CONFIGURATION (usually don't need to change these)
-# =============================================================================
-OVERLAP = "0.0s"        # Overlap length (e.g., "0.0s", "1.5s", "2.5s", "5.0s", "10.0s", "15.0s")
+# QUICK CONFIGURATION - Just change these 3 lines!
+FEATURE_TYPE = "paper_hosf"  # Try: "paper_fused_features", "egemap", "hubert", "emotionmsp", "paper_covarep", "paper_hosf", "umap_egemaps", "umap_emotionmsp", "umap_hubert"
+CHUNK_LENGTH = "4.0s"                  # Available: "3.0s", "5.0s", "10.0s", "20.0s", "30.0s", "4.0s"
+OVERLAP = "0.0s"        # Available overlap: "0.0s", "1.5s", "2.5s", "5.0s", "10.0s", "15.0s"
+MODELS_TO_TRAIN = ['svm']              # Single classifier: ['svm'], ['rf'], ['knn'], ['xgb'], ['lgb'], or ['ensemble'] - Testing LightGBM on UMAP!
 DATA_ROOT = "data"
-
-# =============================================================================
-# SAMPLING CONFIGURATION
-# =============================================================================
-BALANCED_SAMPLING = True  # Apply balanced sampling (equal chunks per patient)
-OVERSAMPLE_MINORITY = True  # Oversample patients with fewer chunks (vs undersample all)
-USE_SIMPLE_OVERSAMPLING = True  # Use old simple oversampling approach (equal samples per patient)
-# Note: USE_SIMPLE_OVERSAMPLING=True gives exactly equal samples per patient (old approach)
-#       USE_SIMPLE_OVERSAMPLING=False uses the newer flexible oversampling approach
+# PATIENT LEVEL Chunks
+BALANCED_SAMPLING = True  # Enable balanced sampling (equal chunks per patient) - PATIENT LEVEL
+OVERSAMPLE_MINORITY = True  # Enable oversampling - PATIENT LEVEL
+# CLASS LEVEL
+UNDERSAMPLE_MAJORITY_CLASS = False  # Global default; RF/XGB will auto-enable undersampling
 RANDOM_SEED = 42         # Random seed for reproducible sampling
-
-# =============================================================================
-# MODEL SELECTION
-# =============================================================================
-# Available options:
-#   - "svm"    # Support Vector Machine (RBF kernel, C=0.7)
-#   - "knn"    # K-Nearest Neighbors (k=2, distance weighting)
-#   - "rf"     # Random Forest (400 trees, balanced subsample)
-
-# =============================================================================
-# EVALUATION CONFIGURATION
-# =============================================================================
 EVALUATE_TEST_SET = True  # Whether to evaluate on test set
 
-# =============================================================================
-# 🚀 USAGE EXAMPLES:
-# =============================================================================
-# 1. Train SVM on paper fused features (4-second chunks):
-#    FEATURE_TYPE = "paper_fused_features"
-#    MODELS_TO_TRAIN = ['svm']
-#
-# 2. Train Random Forest on eGeMAPS features:
-#    FEATURE_TYPE = "egemaps"
-#    MODELS_TO_TRAIN = ['rf']
-#
-# 3. Train SVM on HuBERT features (5-second chunks):
-#    FEATURE_TYPE = "hubert"
-#    CHUNK_LENGTH = "5.0s"
-#    MODELS_TO_TRAIN = ['svm']
-#
-# 4. Quick test with paper fused features:
-#    FEATURE_TYPE = "paper_fused_features"
-#    MODELS_TO_TRAIN = ['svm']
-# =============================================================================
 
 
-def load_unified_features_and_labels(feature_type="unified_paper_features", chunk_length="4.0s", overlap="0.0s", data_root="data", balanced_sampling=True, random_seed=42, oversample_minority=True, use_simple_oversampling=False):
+def load_unified_features_and_labels(feature_type="unified_paper_features", chunk_length="4.0s", overlap="0.0s", data_root="data", balanced_sampling=True, random_seed=42, oversample_minority=True):
     """
     Load unified features and labels for machine learning.
     
@@ -154,7 +103,6 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
         balanced_sampling (bool): Whether to apply balanced sampling (equal chunks per patient)
         random_seed (int): Random seed for reproducible sampling
         oversample_minority (bool): Whether to oversample patients with fewer chunks
-        use_simple_oversampling (bool): Use old simple oversampling approach (equal samples per patient)
     
     Returns:
         dict: Dictionary containing train, dev, and test data
@@ -180,18 +128,8 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
     participant_to_subset = dict(zip(meta_df['participant'], meta_df['subset']))
     
     # Define feature directory based on feature type
-    if feature_type == "paper_fused_features":
-        # Paper fused features (10 COVAREP + 16 HOSF)
-        feature_dir = f"{data_root}/features/{feature_type}/{chunk_length}_{overlap}_overlap"
-    elif feature_type == "unified_paper_features":
-        # Unified paper features
-        feature_dir = f"{data_root}/features/{feature_type}/{chunk_length}_{overlap}_overlap"
-    elif feature_type.startswith("unified_"):
-        # For unified features created by create_unified_features.py
-        feature_dir = f"{data_root}/features/{feature_type}/{chunk_length}_{overlap}_overlap"
-    else:
-        # For original feature types (egemaps, hubert, hosf_fusion, etc.)
-        feature_dir = f"{data_root}/features/{feature_type}/{chunk_length}_{overlap}_overlap"
+    # All feature types follow the same pattern: data/features/{feature_type}/{chunk_length}_{overlap}_overlap
+    feature_dir = f"{data_root}/features/{feature_type}/{chunk_length}_{overlap}_overlap"
     
     if not os.path.exists(feature_dir):
         raise ValueError(f"Feature directory not found: {feature_dir}")
@@ -217,10 +155,21 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
         # Get all feature files for this participant
         # Handle different naming patterns for different feature types
         if feature_type == "paper_fused_features":
-            # Paper fused features use pattern: chunk_[XXX]_paper_fused_features.csv
-            feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}.csv"))
+            # Paper fused features use pattern: chunk_[XXX]_paper_fused_features_features.csv
+            feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}_features.csv"))
+        elif feature_type in ["paper_covarep", "paper_hosf"]:
+            # Paper-specific features use pattern: chunk_[XXX]_paper_[TYPE]_features.csv
+            feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}_features.csv"))
+        elif feature_type.startswith("umap_"):
+            # UMAP features use pattern: chunk_[XXX]_[TYPE]_umap_features.csv
+            # Extract the base feature type (e.g., "egemaps" from "umap_egemaps" -> "egemap")
+            base_feature_type = feature_type.replace("umap_", "")
+            # Handle special case where "egemaps" should become "egemap"
+            if base_feature_type == "egemaps":
+                base_feature_type = "egemap"
+            feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{base_feature_type}_umap_features.csv"))
         else:
-            # Other feature types follow pattern: chunk_[XXX]_[FEATURE_TYPE]_features.csv
+            # Standard feature types follow pattern: chunk_[XXX]_[FEATURE_TYPE]_features.csv
             feature_files = glob.glob(os.path.join(participant_feature_dir, f"*_{feature_type}_features.csv"))
         
         feature_files.sort()  # Ensure consistent ordering
@@ -230,7 +179,16 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
             try:
                 # Load features
                 feature_df = pd.read_csv(feature_file)
-                features = feature_df.iloc[0].values
+                
+                # For UMAP features, exclude metadata columns (original_participant, original_label, original_file)
+                if feature_type.startswith('umap_'):
+                    # Find numeric columns only (exclude metadata columns)
+                    numeric_columns = feature_df.select_dtypes(include=[np.number]).columns
+                    # Explicitly exclude original_label column to prevent data leakage
+                    numeric_columns = [col for col in numeric_columns if col != 'original_label']
+                    features = feature_df[numeric_columns].iloc[0].values
+                else:
+                    features = feature_df.iloc[0].values
                 
                 # Check for NaN or infinite values
                 if np.any(np.isnan(features)) or np.any(np.isinf(features)):
@@ -246,120 +204,68 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
                 print(f"Error loading {feature_file}: {str(e)}")
                 continue
     
-    # Apply balanced sampling if requested
-    if balanced_sampling:
-        print("\nApplying balanced sampling...")
+    # Apply balanced sampling if requested (TRAIN SET ONLY)
+    if balanced_sampling and splits['train']:
+        print("\nApplying balanced sampling (train set only)...")
         np.random.seed(random_seed)
-        
-        for subset in ['train', 'dev', 'test']:
-            if not splits[subset]:  # Skip if no data
-                continue
-                
-            # Create DataFrame for easier manipulation
-            subset_df = pd.DataFrame({
-                'features': splits[subset],
-                'labels': split_labels[subset],
-                'participants': split_participants[subset]
-            })
-            
-            # Count chunks per participant
-            participant_counts = subset_df['participants'].value_counts()
-            min_chunks = participant_counts.min()
-            max_chunks = participant_counts.max()
-            
-            print(f"{subset.capitalize()} set - Chunks per participant:")
-            print(f"  Min: {min_chunks}, Max: {max_chunks}, Mean: {participant_counts.mean():.1f}")
-            
-            if use_simple_oversampling:
-                # Old simple oversampling approach: equal samples per patient
-                print(f"  Using simple oversampling: all patients will have {max_chunks} chunks")
-                
-                balanced_samples = []
-                for participant in subset_df['participants'].unique():
-                    participant_data = subset_df[subset_df['participants'] == participant]
-                    num_chunks = len(participant_data)
-                    
-                    if num_chunks == max_chunks:
-                        # Use all chunks from patients with the maximum number
-                        balanced_samples.append(participant_data)
-                    else:
-                        # Oversample patients with fewer chunks to match max_chunks
-                        # Calculate how many times to repeat the data
+
+        subset = 'train'
+        # Create DataFrame for easier manipulation
+        subset_df = pd.DataFrame({
+            'features': splits[subset],
+            'labels': split_labels[subset],
+            'participants': split_participants[subset]
+        })
+
+        # Count chunks per participant
+        participant_counts = subset_df['participants'].value_counts()
+        min_chunks = participant_counts.min()
+        max_chunks = participant_counts.max()
+
+        print(f"{subset.capitalize()} set - Chunks per participant:")
+        print(f"  Min: {min_chunks}, Max: {max_chunks}, Mean: {participant_counts.mean():.1f}")
+
+        if oversample_minority:
+            print(f"  Using oversampling strategy: patients with <{max_chunks} chunks will be oversampled")
+            balanced_samples = []
+            for participant in subset_df['participants'].unique():
+                participant_data = subset_df[subset_df['participants'] == participant]
+                num_chunks = len(participant_data)
+                if num_chunks == max_chunks:
+                    balanced_samples.append(participant_data)
+                else:
+                    if num_chunks < max_chunks:
                         repeat_times = max_chunks // num_chunks
                         remainder = max_chunks % num_chunks
-                        
-                        # Repeat the entire dataset
                         repeated_data = pd.concat([participant_data] * repeat_times, ignore_index=True)
-                        
-                        # Add remaining samples randomly if needed
                         if remainder > 0:
                             additional_samples = participant_data.sample(n=remainder, random_state=random_seed)
                             repeated_data = pd.concat([repeated_data, additional_samples], ignore_index=True)
-                        
                         balanced_samples.append(repeated_data)
-                        
-            elif oversample_minority:
-                # Strategy: Use all chunks from patients with many chunks, oversample patients with few chunks
-                print(f"  Using oversampling strategy: patients with <{max_chunks} chunks will be oversampled")
-                
-                balanced_samples = []
-                for participant in subset_df['participants'].unique():
-                    participant_data = subset_df[subset_df['participants'] == participant]
-                    num_chunks = len(participant_data)
-                    
-                    if num_chunks == max_chunks:
-                        # Use all chunks from patients with the maximum number
-                        balanced_samples.append(participant_data)
                     else:
-                        # Oversample patients with fewer chunks
-                        if num_chunks < max_chunks:
-                            # Calculate how many times to repeat the data
-                            repeat_times = max_chunks // num_chunks
-                            remainder = max_chunks % num_chunks
-                            
-                            # Repeat the entire dataset
-                            repeated_data = pd.concat([participant_data] * repeat_times, ignore_index=True)
-                            
-                            # Add remaining samples randomly if needed
-                            if remainder > 0:
-                                additional_samples = participant_data.sample(n=remainder, random_state=random_seed)
-                                repeated_data = pd.concat([repeated_data, additional_samples], ignore_index=True)
-                            
-                            balanced_samples.append(repeated_data)
-                        else:
-                            # This shouldn't happen, but handle it gracefully
-                            balanced_samples.append(participant_data)
-            else:
-                # Original strategy: Use minimum number of chunks from all patients
-                print(f"  Using undersampling strategy: all patients limited to {min_chunks} chunks")
-                
-                balanced_samples = []
-                for participant in subset_df['participants'].unique():
-                    participant_data = subset_df[subset_df['participants'] == participant]
-                    
-                    if len(participant_data) >= min_chunks:
-                        # Randomly sample min_chunks from this participant
-                        sampled_data = participant_data.sample(n=min_chunks, random_state=random_seed)
-                        balanced_samples.append(sampled_data)
-                    else:
-                        # If participant has fewer chunks than min_chunks, use all available
                         balanced_samples.append(participant_data)
-            
-            # Combine all balanced samples
-            if balanced_samples:
-                balanced_df = pd.concat(balanced_samples, ignore_index=True)
-                
-                # Update the splits with balanced data
-                splits[subset] = balanced_df['features'].tolist()
-                split_labels[subset] = balanced_df['labels'].tolist()
-                split_participants[subset] = balanced_df['participants'].tolist()
-                
-                # Verify balanced sampling
-                final_counts = pd.Series(split_participants[subset]).value_counts()
-                print(f"  After balancing: Min: {final_counts.min()}, Max: {final_counts.max()}, Mean: {final_counts.mean():.1f}")
-                print(f"  Total samples: {len(balanced_df)} (was {len(subset_df)})")
-            else:
-                print(f"  No data available for {subset} set after balancing")
+        else:
+            print(f"  Using undersampling strategy: all patients limited to {min_chunks} chunks")
+            balanced_samples = []
+            for participant in subset_df['participants'].unique():
+                participant_data = subset_df[subset_df['participants'] == participant]
+                if len(participant_data) >= min_chunks:
+                    sampled_data = participant_data.sample(n=min_chunks, random_state=random_seed)
+                    balanced_samples.append(sampled_data)
+                else:
+                    balanced_samples.append(participant_data)
+
+        if balanced_samples:
+            balanced_df = pd.concat(balanced_samples, ignore_index=True)
+            splits['train'] = balanced_df['features'].tolist()
+            split_labels['train'] = balanced_df['labels'].tolist()
+            split_participants['train'] = balanced_df['participants'].tolist()
+
+            final_counts = pd.Series(split_participants['train']).value_counts()
+            print(f"  After balancing: Min: {final_counts.min()}, Max: {final_counts.max()}, Mean: {final_counts.mean():.1f}")
+            print(f"  Total samples: {len(balanced_df)} (was {len(subset_df)})")
+        else:
+            print("  No data available for train set after balancing")
     
     # Convert to numpy arrays
     data = {}
@@ -383,7 +289,7 @@ def load_unified_features_and_labels(feature_type="unified_paper_features", chun
     return data
 
 
-def train_model(model_type, train_features, train_labels, dev_features, dev_labels, random_seed=42):
+def train_model(model_type, train_features, train_labels, dev_features, dev_labels, random_seed=42, undersample_majority_class=False):
     """
     Train a machine learning model.
     
@@ -394,6 +300,7 @@ def train_model(model_type, train_features, train_labels, dev_features, dev_labe
         dev_features (np.array): Development features
         dev_labels (np.array): Development labels
         random_seed (int): Random seed for reproducibility
+        undersample_majority_class (bool): Whether to undersample non-depressed patients to balance classes
     
     Returns:
         tuple: (trained_model, scaler, dev_predictions)
@@ -404,31 +311,229 @@ def train_model(model_type, train_features, train_labels, dev_features, dev_labe
     class_counts = np.bincount(train_labels)
     print(f"Training class distribution: {class_counts}")
     
+    # Apply undersampling if requested
+    if undersample_majority_class:
+        print("Applying undersampling to balance classes...")
+        np.random.seed(random_seed)
+        
+        # Find indices for each class
+        non_depressed_indices = np.where(train_labels == 0)[0]
+        depressed_indices = np.where(train_labels == 1)[0]
+        
+        # Calculate how many non-depressed samples to keep (match depressed count)
+        target_count = len(depressed_indices)
+        
+        # Randomly sample non-depressed indices
+        sampled_non_depressed_indices = np.random.choice(
+            non_depressed_indices, 
+            size=target_count, 
+            replace=False
+        )
+        
+        # Combine indices
+        balanced_indices = np.concatenate([sampled_non_depressed_indices, depressed_indices])
+        
+        # Shuffle the indices
+        np.random.shuffle(balanced_indices)
+        
+        # Apply undersampling
+        train_features = train_features[balanced_indices]
+        train_labels = train_labels[balanced_indices]
+        
+        # Print results
+        new_class_counts = np.bincount(train_labels)
+        print(f"After undersampling class distribution: {new_class_counts}")
+        print(f"Removed {len(non_depressed_indices) - target_count} non-depressed samples")
+    
     # Scale features
     scaler = StandardScaler()
     train_features_scaled = scaler.fit_transform(train_features)
     dev_features_scaled = scaler.transform(dev_features)
     
     # Calculate class weights for balancing
-    n_classes = len(class_counts)
-    class_weights = {}
-    for i in range(n_classes):
-        class_weights[i] = len(train_labels) / (n_classes * class_counts[i])
+    # Use balanced class counts if undersampling was applied
+    if undersample_majority_class:
+        balanced_class_counts = np.bincount(train_labels)
+        n_classes = len(balanced_class_counts)
+        class_weights = {}
+        for i in range(n_classes):
+            class_weights[i] = len(train_labels) / (n_classes * balanced_class_counts[i])
+    else:
+        n_classes = len(class_counts)
+        class_weights = {}
+        for i in range(n_classes):
+            class_weights[i] = len(train_labels) / (n_classes * class_counts[i])
     
     print(f"Class weights: {class_weights}")
     
     # Initialize model based on type
     if model_type.lower() == 'svm':
-        model = SVC(kernel='rbf', C=0.7, class_weight='balanced', random_state=random_seed)
+        # Use class weighting only if not undersampling (since undersampling already balances classes)
+        if undersample_majority_class:
+            model = SVC(kernel='rbf', C=0.7, class_weight=None, random_state=random_seed)
+            print("Using SVM without class weighting (data already balanced by undersampling)")
+        else:
+            model = SVC(kernel='rbf', C=0.7, class_weight='balanced', random_state=random_seed)
+            print("Using SVM with balanced class weighting")
+        # Fit the model
+        model.fit(train_features_scaled, train_labels)
     elif model_type.lower() == 'knn':
-        model = KNeighborsClassifier(n_neighbors=2, weights='distance')
+        # KNN doesn't support class_weight directly, but we can use class balancing through sampling
+        if undersample_majority_class:
+            # Use SMOTE for KNN when undersampling is requested
+            print("Applying SMOTE for KNN to balance classes...")
+            model = KNeighborsClassifier(n_neighbors=2, weights='distance')
+            smote = SMOTE(random_state=random_seed, k_neighbors=3)
+            train_features_balanced, train_labels_balanced = smote.fit_resample(train_features_scaled, train_labels)
+            
+            # Print SMOTE results
+            original_counts = np.bincount(train_labels)
+            balanced_counts = np.bincount(train_labels_balanced)
+            print(f"Original class distribution: {original_counts}")
+            print(f"After SMOTE class distribution: {balanced_counts}")
+            print(f"SMOTE generated {balanced_counts[1] - original_counts[1]} synthetic depressed samples")
+            
+            # Fit the model with balanced data
+            model.fit(train_features_balanced, train_labels_balanced)
+        else:
+            # Use standard KNN without oversampling - rely on class weighting in evaluation
+            print("Using KNN without SMOTE - relying on class weighting in evaluation")
+            model = KNeighborsClassifier(n_neighbors=2, weights='distance')
+            model.fit(train_features_scaled, train_labels)
     elif model_type.lower() == 'rf':
-        model = RandomForestClassifier(n_estimators=100, class_weight='balanced', random_state=random_seed)
+        # Use class weighting only if not undersampling (since undersampling already balances classes)
+        if undersample_majority_class:
+            model = RandomForestClassifier(
+                n_estimators=500,  # More trees for better performance
+                max_depth=10,      # Limit depth to prevent overfitting
+                max_features='sqrt',  # Feature sampling for better generalization
+                min_samples_split=10,  # Require more samples to split
+                min_samples_leaf=5,    # Require more samples in leaves
+                class_weight=None, 
+                random_state=random_seed
+            )
+            print("Using Random Forest without class weighting (data already balanced by undersampling)")
+        else:
+            # Use built-in balanced class weighting
+            class_weight = 'balanced'
+            print("Using Random Forest with balanced class weighting")
+            
+            model = RandomForestClassifier(
+                n_estimators=500,  # More trees for better performance
+                max_depth=10,      # Limit depth to prevent overfitting
+                max_features='sqrt',  # Feature sampling for better generalization
+                min_samples_split=10,  # Require more samples to split
+                min_samples_leaf=5,    # Require more samples in leaves
+                class_weight=class_weight, 
+                random_state=random_seed
+            )
+        # Fit the model
+        model.fit(train_features_scaled, train_labels)
+    elif model_type.lower() == 'xgb':
+        # XGBoost with optimized parameters for depression classification
+        if undersample_majority_class:
+            # Calculate scale_pos_weight for balanced classes
+            scale_pos_weight = len(train_labels[train_labels == 0]) / len(train_labels[train_labels == 1])
+            model = xgb.XGBClassifier(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                scale_pos_weight=scale_pos_weight,
+                random_state=random_seed,
+                eval_metric='logloss'
+            )
+            print(f"Using XGBoost with scale_pos_weight={scale_pos_weight:.2f} (data already balanced by undersampling)")
+        else:
+            # Use full inverse frequency ratio as scale_pos_weight
+            if class_counts[1] > 0:
+                scale_pos_weight = class_counts[0] / class_counts[1]
+            else:
+                scale_pos_weight = 1.0
+            
+            model = xgb.XGBClassifier(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                scale_pos_weight=scale_pos_weight,
+                random_state=random_seed,
+                eval_metric='logloss'
+            )
+            print(f"Using XGBoost with scale_pos_weight={scale_pos_weight:.2f} for class balancing")
+        # Fit the model
+        model.fit(train_features_scaled, train_labels)
+    elif model_type.lower() == 'lgb':
+        # LightGBM with optimized parameters for depression classification
+        if undersample_majority_class:
+            # Calculate class_weight for balanced classes
+            class_weight = {0: 1.0, 1: len(train_labels[train_labels == 0]) / len(train_labels[train_labels == 1])}
+            model = lgb.LGBMClassifier(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                class_weight=class_weight,
+                random_state=random_seed,
+                verbose=-1
+            )
+            print(f"Using LightGBM with class_weight={class_weight} (data already balanced by undersampling)")
+        else:
+            # Calculate class_weight for original class distribution
+            class_weight = {0: 1.0, 1: class_counts[0] / class_counts[1]} if class_counts[1] > 0 else {0: 1.0, 1: 1.0}
+            model = lgb.LGBMClassifier(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                class_weight=class_weight,
+                random_state=random_seed,
+                verbose=-1
+            )
+            print(f"Using LightGBM with class_weight={class_weight} for class balancing")
+        # Fit the model
+        model.fit(train_features_scaled, train_labels)
+    elif model_type.lower() == 'ensemble':
+        # Voting ensemble of SVM + LightGBM (best performers)
+        print("Creating voting ensemble of SVM + LightGBM...")
+        
+        # Create SVM component
+        svm_component = SVC(kernel='rbf', C=0.7, class_weight='balanced', random_state=random_seed, probability=True)
+        
+        # Create LightGBM component
+        class_weight = {0: 1.0, 1: class_counts[0] / class_counts[1]} if class_counts[1] > 0 else {0: 1.0, 1: 1.0}
+        lgb_component = lgb.LGBMClassifier(
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            class_weight=class_weight,
+            random_state=random_seed,
+            verbose=-1
+        )
+        
+        # Create voting ensemble (soft voting for better performance)
+        model = VotingClassifier(
+            estimators=[
+                ('svm', svm_component),
+                ('lightgbm', lgb_component)
+            ],
+            voting='soft',  # Use probability voting for better performance
+            weights=[1.0, 1.0]  # Equal weights for now, could be tuned
+        )
+        
+        print(f"Using ensemble with soft voting: SVM + LightGBM")
+        print(f"LightGBM class_weight: {class_weight}")
+        
+        # Fit the ensemble
+        model.fit(train_features_scaled, train_labels)
     else:
         raise ValueError(f"Unknown model type: {model_type}")
-    
-    # Fit the model
-    model.fit(train_features_scaled, train_labels)
     
     # Make predictions on dev set
     dev_predictions = model.predict(dev_features_scaled)
@@ -694,37 +799,37 @@ def validate_configuration(feature_type, chunk_length, overlap, models_to_train,
     Returns:
         bool: True if configuration is valid
     """
-    # Valid feature types
+    # Valid feature types (matching actual directories in data/features/)
     valid_feature_types = [
-        "paper_fused_features", "unified_paper_features", "egemaps", 
-        "emotionmsp", "hubert", "hosf_fusion", "covarep", "umap_egemaps", 
-        "umap_emotionmsp", "umap_hubert", "umap_hosf_fusion"
+        "paper_fused_features", "egemap", "emotionmsp", "hubert", 
+        "paper_covarep", "paper_hosf", "umap_egemaps", "umap_egemaps_2D", "umap_egemaps_3D",
+        "umap_emotionmsp", "umap_hubert", "relief_selected_paper_covarep"
     ]
     
     # Valid models
-    valid_models = ["svm", "knn", "rf"]
+    valid_models = ["svm", "knn", "rf", "xgb", "lgb", "ensemble"]
     
     # Check feature type
     if feature_type not in valid_feature_types:
-        print(f"❌ Invalid feature type: {feature_type}")
+        print(f"Invalid feature type: {feature_type}")
         print(f"Valid options: {valid_feature_types}")
         return False
     
     # Check models
     invalid_models = [model for model in models_to_train if model not in valid_models]
     if invalid_models:
-        print(f"❌ Invalid models: {invalid_models}")
+        print(f"Invalid models: {invalid_models}")
         print(f"Valid options: {valid_models}")
         return False
     
     # Check if feature directory exists
     feature_dir = f"{data_root}/features/{feature_type}/{chunk_length}_{overlap}_overlap"
     if not os.path.exists(feature_dir):
-        print(f"❌ Feature directory not found: {feature_dir}")
+        print(f"Feature directory not found: {feature_dir}")
         print(f"Please ensure the features have been extracted for this configuration.")
         return False
     
-    print(f"✅ Configuration validated successfully")
+    print(f"Configuration validated successfully")
     print(f"   Feature type: {feature_type}")
     print(f"   Chunk config: {chunk_length}_{overlap}_overlap")
     print(f"   Models: {models_to_train}")
@@ -753,16 +858,23 @@ def main():
     
     # Validate configuration before proceeding
     if not validate_configuration(FEATURE_TYPE, CHUNK_LENGTH, OVERLAP, MODELS_TO_TRAIN, DATA_ROOT):
-        print("❌ Configuration validation failed. Please fix the issues above.")
+        print("Configuration validation failed. Please fix the issues above.")
         return
     
     try:
         # Load features and labels
         print("Loading features and labels...")
-        data = load_unified_features_and_labels(
-            FEATURE_TYPE, CHUNK_LENGTH, OVERLAP, DATA_ROOT, 
-            BALANCED_SAMPLING, RANDOM_SEED, OVERSAMPLE_MINORITY, USE_SIMPLE_OVERSAMPLING
-        )
+        # If training SVM, do not apply train balancing/oversampling to keep it fast and use class weights only
+        if MODELS_TO_TRAIN[0].lower() == 'svm':
+            data = load_unified_features_and_labels(
+                FEATURE_TYPE, CHUNK_LENGTH, OVERLAP, DATA_ROOT,
+                False, RANDOM_SEED, False
+            )
+        else:
+            data = load_unified_features_and_labels(
+                FEATURE_TYPE, CHUNK_LENGTH, OVERLAP, DATA_ROOT, 
+                BALANCED_SAMPLING, RANDOM_SEED, OVERSAMPLE_MINORITY
+            )
         
         # Extract data for each split
         train_features = data['train_features']
@@ -799,8 +911,10 @@ def main():
         print(f"TRAINING {model_type.upper()} MODEL")
         print("="*60)
         
+        # Auto-enable undersampling for RF and XGB to improve minority recall
+        auto_undersample = UNDERSAMPLE_MAJORITY_CLASS or (model_type.lower() in ["rf", "xgb"]) 
         model, scaler, dev_predictions = train_model(
-            model_type, train_features, train_labels, dev_features, dev_labels, RANDOM_SEED
+            model_type, train_features, train_labels, dev_features, dev_labels, RANDOM_SEED, auto_undersample
         )
         
         dev_results = evaluate_model(dev_labels, dev_predictions, model_type.upper(), "dev", dev_participants)
@@ -831,7 +945,7 @@ def main():
 
 if __name__ == "__main__":
     """
-    🎯 QUICK START:
+    QUICK START:
     1. Edit the configuration parameters at the top of this file (lines 68-138)
     2. Choose your feature set: FEATURE_TYPE = "paper_fused_features"
     3. Choose your single model: MODELS_TO_TRAIN = ['svm']
